@@ -2,6 +2,12 @@
 
 # run as: eval $(python3 get_ceph_secrets_vault_jwt.py --ssh-key bogdan.burciu_privKey.key --username bogdan.burciu)
 
+    # cat requirements.txt
+    #     boto3==1.17.53
+    #     PyJWT==2.1.0
+    #     sshtunnel==0.4.0
+    # pip3 install -r requirements.txt
+
 import jwt
 import time
 import argparse
