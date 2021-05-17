@@ -43,41 +43,40 @@ def main():
                         help='the name of the user owning the private key, for which JWT is issued')
     args = parser.parse_args()
 
-    KEY_FILE = args.ssh_key
-    SSH_USER = args.name
+    key_file = args.ssh_key
+    ssh_user = args.name
 
     # create JWT from ssh private key
-    private = open(KEY_FILE, 'r').read()
-    encoded_jwt = jwt.encode({'name': SSH_USER, 'sub': SUB, "iat": (time.time()), "exp": int(time.time())+TTL}, private, 'RS256')
+    private = open(key_file, 'r').read()
+    encoded_jwt = jwt.encode({'name': ssh_user, 'sub': SUB, "iat": (time.time()), "exp": int(time.time()) + TTL},
+                             private, 'RS256')
 
     # open SSH tunnel from GitLab Runner to the Vault endpoint
     server = sshtunnel.SSHTunnelForwarder(
         (REMOTE_SERVER_IP, 20022),
-        ssh_username=SSH_USER,
+        ssh_username=ssh_user,
         ssh_pkey=args.ssh_key,
         remote_bind_address=(VAULT_IP, VAULT_PORT),
-        local_bind_address=('0.0.0.0', VAULT_PORT),
+        local_bind_address=('127.0.0.1', VAULT_PORT),
         mute_exceptions=True
     )
     server.start()
 
     # feth the Vault Client Token upon authentication with JWT
-    result = requests.post(url=create_url('auth/jwt/login'), data = {'jwt':encoded_jwt, 'role':VAULT_ROLE}, verify=False)
-    CLIENT_TOKEN=result.json()['auth']['client_token']
+    result = requests.post(url=create_url('auth/jwt/login'), data={'jwt': encoded_jwt, 'role': VAULT_ROLE},
+                           verify=False)
+    vault_client_token = result.json()['auth']['client_token']
 
     # read the Ceph S3 secret credentials from Vault, using Client Token
-    headers = {'X-Vault-Token' : CLIENT_TOKEN}
-    result = requests.get(url = create_url('secret/data/neo/ceph?version=1'), headers = {'X-Vault-Token':CLIENT_TOKEN, 'Content-type':'application/json'}, verify=False)
-    S3_ACCESS_KEY_ID=result.json()['data']['data']['s3_access_key_id']
-    S3_SECRET_ACCESS_KEY=result.json()['data']['data']['s3_secret_access_key']
-
-    # exporting the Ceph S3 secretes as environment variables will only make them available to the Py process and its subprocesses, not globally
-    os.environ['S3_ACCESS_KEY_ID'] = S3_ACCESS_KEY_ID
-    os.environ['S3_SECRET_ACCESS_KEY'] = S3_SECRET_ACCESS_KEY
+    result = requests.get(url=create_url('secret/data/neo/ceph?version=1'),
+                          headers={'X-Vault-Token': vault_client_token, 'Content-type': 'application/json'},
+                          verify=False)
+    s3_access_key_id = result.json()['data']['data']['s3_access_key_id']
+    s3_secret_access_key = result.json()['data']['data']['s3_secret_access_key']
 
     # we output export commands and have the parent shell evaluate this to set env vars
-    print("export S3_ACCESS_KEY_ID=%s" % (S3_ACCESS_KEY_ID))
-    print("export S3_SECRET_ACCESS_KEY=%s" % (S3_SECRET_ACCESS_KEY))
+    print("export S3_ACCESS_KEY_ID=%s" % s3_access_key_id)
+    print("export S3_SECRET_ACCESS_KEY=%s" % s3_secret_access_key)
 
     # stop SSH tunnel
     server.stop()
